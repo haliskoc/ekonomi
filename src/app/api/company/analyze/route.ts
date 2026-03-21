@@ -27,7 +27,8 @@ function pruneAnalyzeCache(now: number): void {
   }
 
   const sorted = Array.from(cache.entries()).sort((a, b) => a[1].expiresAt - b[1].expiresAt);
-  const deleteCount = Math.ceil((sorted.length - MAX_CACHE_ENTRIES) + sorted.length * 0.15);
+  const overflow = Math.max(0, sorted.length - MAX_CACHE_ENTRIES);
+  const deleteCount = Math.ceil(overflow + sorted.length * 0.15);
   for (let i = 0; i < deleteCount; i += 1) {
     const key = sorted[i]?.[0];
     if (key) {

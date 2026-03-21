@@ -1,6 +1,10 @@
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { createRequestId, jsonError, jsonSuccess } from "@/lib/api";
+import { checkRateLimit } from "@/lib/rateLimit";
+import { createRequestId, getClientIp, jsonError, jsonSuccess, mergeHeaders } from "@/lib/api";
+
+const RATE_LIMIT_WINDOW_MS = 60 * 1000;
+const RATE_LIMIT_COUNT = 30;
 
 const schema = z.object({
   format: z.enum(["json", "pdf"]),
@@ -44,6 +48,21 @@ function buildSimplePdf(lines: string[]): string {
 
 export async function POST(request: NextRequest) {
   const requestId = createRequestId();
+  const clientIp = getClientIp(request);
+  const rate = checkRateLimit({
+    key: `export-report:${clientIp}`,
+    limit: RATE_LIMIT_COUNT,
+    windowMs: RATE_LIMIT_WINDOW_MS,
+  });
+  if (!rate.allowed) {
+    return jsonError("too many requests", 429, {
+      requestId,
+      code: "RATE_LIMITED",
+      headers: {
+        "retry-after": String(rate.retryAfterSeconds),
+      },
+    });
+  }
 
   try {
     const raw = await request.json();
@@ -76,13 +95,17 @@ export async function POST(request: NextRequest) {
     ];
 
     const bytes = buildSimplePdf(lines);
-    return new Response(bytes, {
+    const headers = new Headers();
+    headers.set("content-type", "application/pdf");
+    headers.set("content-disposition", `attachment; filename=report-${Date.now()}.pdf`);
+    const securityHeaders = mergeHeaders(undefined, requestId);
+    securityHeaders.forEach((value: string, key: string) => {
+      headers.set(key, value);
+    });
+
+    return new NextResponse(bytes, {
       status: 200,
-      headers: {
-        "content-type": "application/pdf",
-        "content-disposition": `attachment; filename=report-${Date.now()}.pdf`,
-        "x-request-id": requestId,
-      },
+      headers,
     });
   } catch (error) {
     return jsonError(error instanceof Error ? error.message : "unexpected error", 500, {

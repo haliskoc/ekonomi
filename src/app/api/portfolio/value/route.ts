@@ -1,7 +1,11 @@
 import { NextRequest } from "next/server";
 import { z } from "zod";
-import { createRequestId, jsonError, jsonSuccess } from "@/lib/api";
+import { checkRateLimit } from "@/lib/rateLimit";
+import { createRequestId, getClientIp, jsonError, jsonSuccess } from "@/lib/api";
 import { fetchYahooQuotes } from "@/lib/yahoo";
+
+const RATE_LIMIT_WINDOW_MS = 60 * 1000;
+const RATE_LIMIT_COUNT = 30;
 
 const holdingSchema = z.object({
   symbol: z.string().trim().min(1).max(24),
@@ -15,6 +19,22 @@ const bodySchema = z.object({
 
 export async function POST(request: NextRequest) {
   const requestId = createRequestId();
+  const clientIp = getClientIp(request);
+  const rate = checkRateLimit({
+    key: `portfolio-value:${clientIp}`,
+    limit: RATE_LIMIT_COUNT,
+    windowMs: RATE_LIMIT_WINDOW_MS,
+  });
+  if (!rate.allowed) {
+    return jsonError("too many requests", 429, {
+      requestId,
+      code: "RATE_LIMITED",
+      headers: {
+        "retry-after": String(rate.retryAfterSeconds),
+      },
+    });
+  }
+
   try {
     const raw = await request.json();
     const parsed = bodySchema.safeParse(raw);

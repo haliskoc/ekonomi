@@ -1,15 +1,15 @@
 import { NextResponse } from "next/server";
-import { getOptionalEnv } from "@/lib/env";
+import { getRequiredEnv } from "@/lib/env";
 
 export const AUTH_COOKIE_NAME = "ekonomi_session";
 
 function getAuthSecret(): string {
-  return getOptionalEnv("AUTH_COOKIE_VALUE")?.trim() || "ekonomi-local-session";
+  return getRequiredEnv("AUTH_COOKIE_VALUE").trim();
 }
 
 export function validateCredentials(email: string, password: string): boolean {
-  const expectedEmail = getOptionalEnv("ADMIN_EMAIL")?.trim() || "admin@ekonomi.local";
-  const expectedPassword = getOptionalEnv("ADMIN_PASSWORD")?.trim() || "ChangeMe123!";
+  const expectedEmail = getRequiredEnv("ADMIN_EMAIL").trim();
+  const expectedPassword = getRequiredEnv("ADMIN_PASSWORD").trim();
 
   return email.trim().toLowerCase() === expectedEmail.toLowerCase() && password === expectedPassword;
 }

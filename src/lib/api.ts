@@ -8,7 +8,7 @@ type JsonOptions = {
   headers?: HeadersInit;
 };
 
-function mergeHeaders(base: HeadersInit | undefined, requestId: string): Headers {
+export function mergeHeaders(base: HeadersInit | undefined, requestId: string): Headers {
   const headers = new Headers(base);
   headers.set("x-request-id", requestId);
   headers.set("x-content-type-options", "nosniff");

@@ -1,5 +1,10 @@
-import { createRequestId, jsonError, jsonSuccess } from "@/lib/api";
+import { NextRequest } from "next/server";
+import { checkRateLimit } from "@/lib/rateLimit";
+import { createRequestId, getClientIp, jsonError, jsonSuccess } from "@/lib/api";
 import { fetchYahooQuotes } from "@/lib/yahoo";
+
+const RATE_LIMIT_WINDOW_MS = 60 * 1000;
+const RATE_LIMIT_COUNT = 30;
 
 const GLOBAL_INDEXES = [
   { id: "dax", symbol: "^GDAXI", label: "DAX" },
@@ -9,8 +14,24 @@ const GLOBAL_INDEXES = [
   { id: "shanghai", symbol: "000001.SS", label: "Shanghai Composite" },
 ];
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   const requestId = createRequestId();
+  const clientIp = getClientIp(request);
+  const rate = checkRateLimit({
+    key: `markets-global:${clientIp}`,
+    limit: RATE_LIMIT_COUNT,
+    windowMs: RATE_LIMIT_WINDOW_MS,
+  });
+  if (!rate.allowed) {
+    return jsonError("too many requests", 429, {
+      requestId,
+      code: "RATE_LIMITED",
+      headers: {
+        "retry-after": String(rate.retryAfterSeconds),
+      },
+    });
+  }
+
   try {
     const quotes = await fetchYahooQuotes(GLOBAL_INDEXES.map((item) => item.symbol));
 

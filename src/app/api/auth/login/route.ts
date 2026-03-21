@@ -1,7 +1,11 @@
 import { NextRequest } from "next/server";
 import { z } from "zod";
-import { createRequestId, jsonError, jsonSuccess } from "@/lib/api";
+import { checkRateLimit } from "@/lib/rateLimit";
+import { createRequestId, getClientIp, jsonError, jsonSuccess } from "@/lib/api";
 import { setAuthCookie, validateCredentials } from "@/lib/auth";
+
+const RATE_LIMIT_WINDOW_MS = 60 * 1000;
+const RATE_LIMIT_COUNT = 5;
 
 const loginSchema = z.object({
   email: z.string().trim().email("email is invalid"),
@@ -10,6 +14,21 @@ const loginSchema = z.object({
 
 export async function POST(request: NextRequest) {
   const requestId = createRequestId();
+  const clientIp = getClientIp(request);
+  const rate = checkRateLimit({
+    key: `auth-login:${clientIp}`,
+    limit: RATE_LIMIT_COUNT,
+    windowMs: RATE_LIMIT_WINDOW_MS,
+  });
+  if (!rate.allowed) {
+    return jsonError("too many requests", 429, {
+      requestId,
+      code: "RATE_LIMITED",
+      headers: {
+        "retry-after": String(rate.retryAfterSeconds),
+      },
+    });
+  }
 
   try {
     const raw = await request.json();

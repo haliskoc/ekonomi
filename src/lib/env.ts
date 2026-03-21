@@ -33,3 +33,11 @@ export function getEnv(): Env {
 export function getOptionalEnv<K extends keyof Env>(key: K): Env[K] {
   return getEnv()[key];
 }
+
+export function getRequiredEnv<K extends keyof Env>(key: K): NonNullable<Env[K]> {
+  const value = getEnv()[key];
+  if (value === undefined || value === null) {
+    throw new Error(`Required environment variable ${String(key)} is not set`);
+  }
+  return value as NonNullable<Env[K]>;
+}
