@@ -19,6 +19,8 @@ export async function validateCredentials(email: string, password: string): Prom
     const sql = getDbClient();
     const users = await sql`SELECT * FROM users WHERE email = ${emailInput}`;
     if (!users || users.length === 0) {
+      // Mitigate User Enumeration Timing Attack by performing dummy hash check
+      await bcrypt.compare(password, "$2a$10$abcdefghijklmnopqrstuvwxyz1234567890123");
       const expectedEmail = getRequiredEnv("ADMIN_EMAIL").trim();
       const expectedPassword = getRequiredEnv("ADMIN_PASSWORD").trim();
       return emailInput === expectedEmail.toLowerCase() && password === expectedPassword;

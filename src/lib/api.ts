@@ -22,17 +22,21 @@ export function createRequestId(): string {
 }
 
 export function getClientIp(request: NextRequest): string {
-  const forwardedFor = request.headers.get("x-forwarded-for");
-  if (forwardedFor) {
-    const first = forwardedFor.split(",")[0]?.trim();
-    if (first) {
-      return first;
-    }
-  }
-
+  // To prevent IP spoofing, we should look at x-real-ip first if set by our trusted proxy
   const realIp = request.headers.get("x-real-ip");
   if (realIp) {
     return realIp.trim();
+  }
+
+  // Fallback to x-forwarded-for. To avoid spoofing, we take the right-most IP
+  // (or Next.js normalized string, but safely handling it)
+  const forwardedFor = request.headers.get("x-forwarded-for");
+  if (forwardedFor) {
+    const parts = forwardedFor.split(",");
+    const rightMost = parts[parts.length - 1]?.trim();
+    if (rightMost) {
+      return rightMost;
+    }
   }
 
   return "unknown";
