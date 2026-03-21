@@ -1,129 +1,170 @@
-# Ücretsiz Borsa Veri API'leri - Entegrasyon Tamamlandı ✅
+# Ücretsiz Borsa Veri ve Haber API'leri - Entegrasyon Tamamlandı ✅
 
-Bu projede **3 adet** ücretsiz API başarıyla entegre edilmiştir.
+Bu projede **borsa verisi** ve **haber** için birçok ücretsiz API/RSS kaynağı entegre edilmiştir.
 
-## Entegre Edilen API'ler
+## ═══════════════════════════════════════════════════════════════════════════
+## BORSA VERİ API'LERİ
+## ═══════════════════════════════════════════════════════════════════════════
 
 ### 1. Alpha Vantage ⭐
 - **API Key:** `CK552N9Z086P34ZW` ✅
 - **Limit:** 500 istek/gün, 5 istek/dakika
 - **Dosya:** `src/lib/alphavantage.ts`
-- **Fonksiyonlar:**
-  - `fetchAlphaVantageQuote()` - Anlık fiyat
-  - `fetchAlphaVantageIntraday()` - Dakikalık veriler
-  - `fetchAlphaVantageDaily()` - Günlük veriler
-  - `searchAlphaVantageSymbol()` - Sembol arama
+- **Fonksiyonlar:** Quote, Intraday, Daily, Symbol Search
 
 ### 2. Twelve Data ⭐
 - **API Key:** `85a0eb5f930748fbb46756a6a1fe7812` ✅
 - **Limit:** 800 API çağrısı/gün
 - **Dosya:** `src/lib/twelvedata.ts`
-- **Fonksiyonlar:**
-  - `fetchTwelveDataQuote()` - Anlık fiyat
-  - `fetchTwelveDataTimeSeries()` - Zaman serisi verileri
-  - `fetchTwelveDataMultipleQuotes()` - Çoklu sembol
-  - `searchTwelveDataSymbol()` - Sembol arama
-  - `fetchTwelveDataForex()` - Döviz kurları
+- **Fonksiyonlar:** Quote, Time Series, Multiple Quotes, Forex, Symbol Search
 
 ### 3. Finnhub ⭐
 - **API Key:** `d6vchlhr01qiiutba9kgd6vchlhr01qiiutba9l0` ✅
 - **Limit:** 60 API çağrısı/dakika
 - **Dosya:** `src/lib/finnhub.ts`
-- **Fonksiyonlar:**
-  - `fetchFinnhubQuote()` - Anlık fiyat
-  - `fetchFinnhubCandles()` - Mum grafik verileri
-  - `fetchFinnhubCompanyProfile()` - Şirket profili
-  - `fetchFinnhubCompanyNews()` - Şirket haberleri
-  - `fetchFinnhubMarketNews()` - Piyasa haberleri
-  - `searchFinnhubSymbol()` - Sembol arama
+- **Fonksiyonlar:** Quote, Candles, Company Profile, **Company News**, **Market News**, Symbol Search
 
-### 4. Yahoo Finance (Mevcut)
+### 4. Yahoo Finance
 - **API Key:** Gerekmiyor
 - **Dosya:** `src/lib/yahoo.ts`
-- **Not:** Resmi API değil, otomatik fallback olarak kullanılır
+- **Not:** Otomatik fallback olarak kullanılır
 
-## Birleşik Servis: marketData.ts
+## ═══════════════════════════════════════════════════════════════════════════
+## HABER KAYNAKLARI
+## ═══════════════════════════════════════════════════════════════════════════
 
-Tüm API'ler tek bir serviste birleştirildi:
+### RSS Kaynakları (38 Türkçe + 24 İngilizce = 62 kaynak)
 
-```typescript
-import { fetchMarketQuote, fetchChartData, getMarketDataStatus } from "@/lib/marketData";
+#### Türkçe Kaynaklar (38 adet)
+- Bloomberg HT, NTV, Dünya, Hürriyet, Habertürk, TRT Haber
+- Ekonomim, Anadolu Ajansı, Milliyet, Sözcü, Sabah, Cumhuriyet
+- Bigpara, Investing TR, Ensonhaber, Haber7, T24
+- **Yeni Eklenenler:**
+  - Ekonomist, Capital, Türkiye Gazetesi, Yeni Şafak
+  - Star, Akşam, Posta, Türkgün, Karar
+  - Para Dergisi, Borsa Gündem, Uzmanpara, Finans Gündem
+  - Doviz.com, Altın.in, Ekonomi Haberleri
+  - Türkiye Sigorta, Kobiden, Ticaret Bakanlığı
+  - **TÜİK**, **TCMB**
 
-// Tek sembol çek (otomatik fallback)
-const quote = await fetchMarketQuote("AAPL");
+#### İngilizce Kaynaklar (24 adet)
+- BBC Business, CNBC, Reuters, WSJ, MarketWatch
+- Investing.com, Yahoo Finance, Financial Times
+- Seeking Alpha, Business Insider, Federal Reserve
+- IMF, OECD, NYTimes, Guardian, World Bank, ECB, FXStreet
 
-// Belirli bir provider ile çek
-const quote = await fetchMarketQuote("THYAO.IS", "twelvedata");
+### Haber API Servisleri (İsteğe Bağlı)
 
-// Grafik verisi
-const candles = await fetchChartData("AAPL", "6mo");
+#### 1. NewsAPI.org
+- **Limit:** 100 istek/gün, 50 sonuç/istek
+- **Kayıt:** https://newsapi.org/register
+- **Env:** `NEWSAPI_KEY`
 
-// Provider durumunu kontrol et
-const status = getMarketDataStatus();
+#### 2. GNews API
+- **Limit:** 100 istek/gün, 10 sonuç/istek
+- **Kayıt:** https://gnews.io/register
+- **Env:** `GNEWS_API_KEY`
+
+#### 3. Currents API
+- **Limit:** 600 istek/gün
+- **Kayıt:** https://currentsapi.services/en/register
+- **Env:** `CURRENTS_API_KEY`
+
+#### 4. Mediastack
+- **Limit:** 500 istek/ay, 25 sonuç/istek
+- **Kayıt:** http://mediastack.com/signup/free
+- **Env:** `MEDIASTACK_ACCESS_KEY`
+
+## ═══════════════════════════════════════════════════════════════════════════
+## API ENDPOINT'LERİ
+## ═══════════════════════════════════════════════════════════════════════════
+
+### Batch RSS/Haber Endpoint (YENİ) ✨
+```
+GET /api/rss/feeds?lang=tr&limit=50&includeNewsApis=true
+```
+- `lang`: `tr`, `en`, veya `all` (varsayılan: `all`)
+- `limit`: 1-100 arası sonuç sayısı (varsayılan: 50)
+- `sources`: Belirli kaynak ID'leri (virgülle ayrılmış)
+- `includeNewsApis`: Haber API'lerini de dahil et (varsayılan: `false`)
+
+**Örnek:**
+```bash
+# Tüm Türkçe haberleri çek
+curl "http://localhost:3000/api/rss/feeds?lang=tr&limit=50"
+
+# Haber API'leri ile birlikte
+curl "http://localhost:3000/api/rss/feeds?lang=tr&limit=100&includeNewsApis=true"
 ```
 
-## API Endpoint'leri
+### Tekil RSS Endpoint
+```
+GET /api/rss/fetch?url=https://www.bloomberght.com/rss
+```
 
 ### Market Status
 ```
 GET /api/market/status
 ```
-Tüm provider'ların durumunu ve test sonuçlarını gösterir.
 
-### Market Summary (Güncellendi)
+### Market Summary
 ```
 GET /api/markets/summary?market=bist100&provider=twelvedata
 ```
-- `market`: bist100 veya us
-- `provider`: (opsiyonel) yahoo, alphavantage, twelvedata, finnhub
 
-## Kullanım Örnekleri
-
-### BIST Hisse Fiyatı
-```typescript
-// Twelve Data ile THYAO hissesi
-const quote = await fetchMarketQuote("THYAO.IS", "twelvedata");
-// Sonuç: { symbol: "THYAO.IS", price: 285.50, change: 2.3, ... }
-```
-
-### ABD Hisse Fiyatı
-```typescript
-// Finnhub ile Apple hissesi
-const quote = await fetchMarketQuote("AAPL", "finnhub");
-// Sonuç: { symbol: "AAPL", price: 178.25, change: -1.2, ... }
-```
-
-### Grafik Verisi
-```typescript
-// 6 aylık günlük veri
-const candles = await fetchChartData("GARAN.IS", "6mo", "alphavantage");
-// Sonuç: [{ date: "2024-01-01", open: 95.5, high: 97.2, ... }, ...]
-```
-
-## Fallback Mekanizması
-
-Sistem otomatik olarak çalışır:
-1. Belirtilen provider'ı dener
-2. Hata alırsa diğer provider'lara geçer
-3. İlk başarılı olan sonucu döndürür
-
+## ═══════════════════════════════════════════════════════════════════════════
 ## .env.local Dosyası
+## ═══════════════════════════════════════════════════════════════════════════
 
 ```env
 # Borsa veri API'leri (Entegre edildi ✅)
 ALPHAVANTAGE_API_KEY=CK552N9Z086P34ZW
 TWELVE_DATA_API_KEY=85a0eb5f930748fbb46756a6a1fe7812
 FINNHUB_API_KEY=d6vchlhr01qiiutba9kgd6vchlhr01qiiutba9l0
+
+# Haber API'leri (Opsiyonel - Ücretsiz kayıt yapın)
+NEWSAPI_KEY=
+GNEWS_API_KEY=
+CURRENTS_API_KEY=
+MEDIASTACK_ACCESS_KEY=
 ```
 
-## Avantajlar
+## ═══════════════════════════════════════════════════════════════════════════
+## KULLANIM ÖRNEKLERİ
+## ═══════════════════════════════════════════════════════════════════════════
 
-1. **Yedeklilik:** Bir API çökerse diğerleri devreye girer
-2. **Esneklik:** İstediğiniz provider'ı seçebilirsiniz
-3. **Kolay Kullanım:** Tek bir fonksiyon ile tüm API'lere erişim
-4. **Tip Güvenliği:** TypeScript tipleri ile tam IntelliSense desteği
+### TypeScript Kullanımı
 
-## Rate Limit Yönetimi
+```typescript
+// Borsa verisi
+import { fetchMarketQuote, fetchChartData } from "@/lib/marketData";
+
+const quote = await fetchMarketQuote("THYAO.IS", "twelvedata");
+const candles = await fetchChartData("AAPL", "6mo");
+
+// Haber API servisi
+import { fetchAllNews, fetchNewsAPI, fetchGNews } from "@/lib/newsService";
+
+const news = await fetchAllNews("economy finance", "en", 50);
+const newsApiArticles = await fetchNewsAPI("stock market", "en", 20);
+```
+
+### API Kullanımı
+
+```bash
+# Türkçe haberler (sadece RSS)
+curl "http://localhost:3000/api/rss/feeds?lang=tr&limit=30"
+
+# Tüm haberler (RSS + Haber API'leri)
+curl "http://localhost:3000/api/rss/feeds?lang=all&limit=100&includeNewsApis=true"
+
+# Belirli kaynaklardan haber
+curl "http://localhost:3000/api/rss/feeds?sources=bloomberght-ekonomi,ntv-ekonomi"
+```
+
+## ═══════════════════════════════════════════════════════════════════════════
+## RATE LİMİT YÖNETİMİ
+## ═══════════════════════════════════════════════════════════════════════════
 
 | Provider | Dakika Limit | Günlük Limit | Cache Süresi |
 |----------|--------------|--------------|--------------|
@@ -131,10 +172,28 @@ FINNHUB_API_KEY=d6vchlhr01qiiutba9kgd6vchlhr01qiiutba9l0
 | Alpha Vantage | 5 | 500 | 5 dakika |
 | Twelve Data | 8 | 800 | 5 dakika |
 | Finnhub | 60 | - | 1 dakika |
+| NewsAPI | - | 100 | 10 dakika |
+| GNews | - | 100 | 10 dakika |
+| Currents | - | 600 | 10 dakika |
+| Mediastack | - | 500/ay | 10 dakika |
 
-## Sonraki Adımlar
+## ═══════════════════════════════════════════════════════════════════════════
+## AVANTAJLAR
+## ═══════════════════════════════════════════════════════════════════════════
 
+1. **Geniş Kapsam:** 62+ RSS kaynağı + 4 haber API'si
+2. **Yedeklilik:** Bir kaynak çöse diğerleri devreye girer
+3. **Esneklik:** İstediğiniz dili ve kaynağı seçebilirsiniz
+4. **Finnhub Entegrasyonu:** Piyasa haberleri otomatik dahil edilir
+5. **Deduplikasyon:** Aynı haber farklı kaynaklardan gelse bile tekilleştirilir
+6. **Cache:** Rate limit'i verimli kullanmak için caching
+
+## ═══════════════════════════════════════════════════════════════════════════
+## SONRAKI ADIMLAR
+## ═══════════════════════════════════════════════════════════════════════════
+
+- [ ] Ücretsiz haber API'lerine kayıt yap (NewsAPI, GNews, Currents, Mediastack)
+- [ ] .env.local dosyasına API key'leri ekle
+- [ ] Haber sayfasını güncelle (yeni endpoint kullan)
 - [ ] Şirket analiz sayfasını güncelle
 - [ ] Teknik göstergeleri ekle
-- [ ] Gerçek zamanlı veri akışı (WebSocket)
-- [ ] Portföy takibi entegrasyonu

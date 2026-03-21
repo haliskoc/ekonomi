@@ -11,9 +11,23 @@ const envSchema = z.object({
   ALPHAVANTAGE_API_KEY: z.string().min(1).optional(),
   TWELVE_DATA_API_KEY: z.string().min(1).optional(),
   FINNHUB_API_KEY: z.string().min(1).optional(),
+  // Haber API anahtarları
+  NEWSAPI_KEY: z.string().min(1).optional(),
+  GNEWS_API_KEY: z.string().min(1).optional(),
+  CURRENTS_API_KEY: z.string().min(1).optional(),
+  MEDIASTACK_ACCESS_KEY: z.string().min(1).optional(),
 });
 
 type Env = z.infer<typeof envSchema>;
+
+// Lenient schema for optional env vars (doesn't validate format, just reads)
+function readEnvValue(key: string): string | undefined {
+  const value = process.env[key];
+  if (value === undefined || value === "" || value === null) {
+    return undefined;
+  }
+  return value;
+}
 
 let cache: Env | null = null;
 
@@ -35,11 +49,13 @@ export function getEnv(): Env {
 }
 
 export function getOptionalEnv<K extends keyof Env>(key: K): Env[K] {
-  return getEnv()[key];
+  // For optional env vars, read directly without strict validation
+  const value = readEnvValue(key as string);
+  return value as Env[K];
 }
 
 export function getRequiredEnv<K extends keyof Env>(key: K): NonNullable<Env[K]> {
-  const value = getEnv()[key];
+  const value = readEnvValue(key as string);
   if (value === undefined || value === null) {
     throw new Error(`Required environment variable ${String(key)} is not set`);
   }
