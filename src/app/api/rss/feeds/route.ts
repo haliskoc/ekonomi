@@ -24,6 +24,41 @@ const RATE_LIMIT_COUNT = 20;
 const FETCH_TIMEOUT_MS = 10000; // 10s timeout - daha güvenilir
 const BATCH_SIZE = 10; // Batch başına kaç feed fetch edilecek
 
+// ============================================
+// PERFORMANCE OPTIMIZATIONS
+// ============================================
+
+// 1. In-memory cache with TTL (2 minutes)
+const CACHE_TTL = 2 * 60 * 1000; // 2 minutes
+interface CacheEntry<T> {
+  data: T;
+  timestamp: number;
+}
+const feedCache = new Map<string, CacheEntry<any>>();
+
+// 2. Request coalescing - prevent duplicate simultaneous fetches
+const pendingRequests = new Map<string, Promise<any>>();
+
+function getCacheKey(lang: string, limit: number, sources?: string, includeNewsApis?: boolean): string {
+  return `rss:${lang}:${limit}:${sources || "all"}:${includeNewsApis || false}`;
+}
+
+function getCachedData<T>(key: string): T | null {
+  const entry = feedCache.get(key);
+  if (entry && Date.now() - entry.timestamp < CACHE_TTL) {
+    return entry.data as T;
+  }
+  // Clean up expired entry
+  if (entry) {
+    feedCache.delete(key);
+  }
+  return null;
+}
+
+function setCachedData<T>(key: string, data: T): void {
+  feedCache.set(key, { data, timestamp: Date.now() });
+}
+
 // fast-xml-parser configuration
 const xmlParser = new XMLParser({
   ignoreAttributes: false,
@@ -205,9 +240,9 @@ async function fetchFeedsInBatches(
       }
     }
     
-    // Small delay between batches to avoid overwhelming servers
+    // Reduced delay between batches (100ms instead of 500ms) for better performance
     if (i + batchSize < sortedSources.length) {
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      await new Promise((resolve) => setTimeout(resolve, 100));
     }
   }
   
@@ -217,20 +252,32 @@ async function fetchFeedsInBatches(
 async function fetchFinnhubNewsAsRss(): Promise<RssItem[]> {
   try {
     const categories = ["general", "forex", "crypto", "merger"];
+
+    // Parallel fetching - fetch all categories simultaneously
+    const results = await Promise.allSettled(
+      categories.map((category) => fetchFinnhubMarketNews(category))
+    );
+
     const allNews: RssItem[] = [];
 
-    for (const category of categories) {
-      const news = await fetchFinnhubMarketNews(category);
-      for (const item of news) {
-        allNews.push({
-          title: item.headline,
-          link: item.url,
-          pubDate: new Date(item.datetime * 1000).toISOString(),
-          source: `Finnhub - ${category.charAt(0).toUpperCase() + category.slice(1)}`,
-          sourceId: `finnhub-${category}`,
-          description: item.summary?.slice(0, 260),
-          image: item.image || undefined,
-        });
+    for (let i = 0; i < results.length; i++) {
+      const result = results[i];
+      const category = categories[i];
+
+      if (result.status === "fulfilled") {
+        for (const item of result.value) {
+          allNews.push({
+            title: item.headline,
+            link: item.url,
+            pubDate: new Date(item.datetime * 1000).toISOString(),
+            source: `Finnhub - ${category.charAt(0).toUpperCase() + category.slice(1)}`,
+            sourceId: `finnhub-${category}`,
+            description: item.summary?.slice(0, 260),
+            image: item.image || undefined,
+          });
+        }
+      } else {
+        console.warn(`Finnhub category ${category} fetch failed:`, result.reason);
       }
     }
 
@@ -239,6 +286,84 @@ async function fetchFinnhubNewsAsRss(): Promise<RssItem[]> {
     console.warn("Finnhub news fetch failed:", error);
     return [];
   }
+}
+
+async function fetchAllFeedData(
+  lang: string,
+  limit: number,
+  sources: string | undefined,
+  includeNewsApis: boolean,
+  filteredSources: RssFeedSource[]
+) {
+  // Fetch RSS feeds in batches (with priority ordering)
+  const rssItems = await fetchFeedsInBatches(filteredSources, BATCH_SIZE);
+  const finnhubPromise = fetchFinnhubNewsAsRss();
+
+  // Optionally fetch from news APIs
+  const newsApiPromise = includeNewsApis
+    ? fetchAllNews(lang === "tr" ? "ekonomi finans" : "economy finance", lang === "all" ? "en" : lang, Math.min(limit, 30))
+    : Promise.resolve({ items: [], sources: [] });
+
+  const [finnhubResults, newsApiResults] = await Promise.all([
+    finnhubPromise,
+    newsApiPromise,
+  ]);
+
+  // Collect all items
+  const allItems: RssItem[] = [...finnhubResults, ...rssItems];
+
+  // Add news API items
+  for (const item of newsApiResults.items) {
+    allItems.push({
+      title: item.title,
+      link: item.link,
+      pubDate: item.pubDate,
+      source: item.source,
+      sourceId: "newsapi",
+      description: item.description,
+      image: item.image,
+    });
+  }
+
+  // Deduplicate by link
+  const dedup = new Set<string>();
+  const uniqueItems = allItems.filter((item) => {
+    const key = item.link.toLowerCase();
+    if (dedup.has(key)) return false;
+    dedup.add(key);
+    return true;
+  });
+
+  // Sort by date (newest first)
+  uniqueItems.sort((a, b) => {
+    const dateA = new Date(a.pubDate).getTime();
+    const dateB = new Date(b.pubDate).getTime();
+    return dateB - dateA;
+  });
+
+  // Limit results
+  const limitedItems = uniqueItems.slice(0, limit);
+
+  // Calculate stats - estimate based on items received
+  const uniqueSourceIds = new Set(allItems.map((i) => i.sourceId));
+  const activeSources = uniqueSourceIds.size;
+  const failedSources = Math.max(0, filteredSources.length - activeSources);
+  const newsApiStatus = getNewsServiceStatus();
+
+  return {
+    items: limitedItems,
+    stats: {
+      totalItems: limitedItems.length,
+      totalSources: filteredSources.length,
+      activeSources,
+      failedSources,
+      finnhubItems: finnhubResults.length,
+      newsApiItems: newsApiResults.items.length,
+      newsApiSources: newsApiResults.sources,
+      language: lang,
+      newsApiStatus: includeNewsApis ? newsApiStatus : undefined,
+    },
+  };
 }
 
 export async function GET(request: NextRequest) {
@@ -274,91 +399,68 @@ export async function GET(request: NextRequest) {
 
     const { lang, limit, sources, includeNewsApis } = parsedQuery.data;
 
-    // Filter sources by language or specific IDs
-    let filteredSources = DEFAULT_RSS_FEEDS;
-    if (sources) {
-      const sourceIds = sources.split(",").map((s) => s.trim());
-      filteredSources = DEFAULT_RSS_FEEDS.filter((s) => sourceIds.includes(s.id));
-    } else if (lang !== "all") {
-      filteredSources = DEFAULT_RSS_FEEDS.filter((s) => s.language === lang);
+    // Generate cache key
+    const cacheKey = getCacheKey(lang, limit, sources, includeNewsApis);
+
+    // Check in-memory cache first
+    const cachedData = getCachedData<any>(cacheKey);
+    if (cachedData) {
+      return jsonSuccess(
+        { ...cachedData, cached: true, requestId },
+        {
+          requestId,
+          headers: {
+            "cache-control": "public, s-maxage=300, stale-while-revalidate=600",
+            "x-ratelimit-remaining": String(rate.remaining),
+            "x-cache": "HIT",
+          },
+        }
+      );
     }
 
-    // Fetch RSS feeds in batches (with priority ordering)
-    const rssItems = await fetchFeedsInBatches(filteredSources, BATCH_SIZE);
-    const finnhubPromise = fetchFinnhubNewsAsRss();
-    
-    // Optionally fetch from news APIs
-    const newsApiPromise = includeNewsApis
-      ? fetchAllNews(lang === "tr" ? "ekonomi finans" : "economy finance", lang === "all" ? "en" : lang, Math.min(limit, 30))
-      : Promise.resolve({ items: [], sources: [] });
+    // Request coalescing - check if there's already a pending request for this key
+    let requestPromise = pendingRequests.get(cacheKey);
+    if (!requestPromise) {
+      // Filter sources by language or specific IDs
+      let filteredSources = DEFAULT_RSS_FEEDS;
+      if (sources) {
+        const sourceIds = sources.split(",").map((s) => s.trim());
+        filteredSources = DEFAULT_RSS_FEEDS.filter((s) => sourceIds.includes(s.id));
+      } else if (lang !== "all") {
+        filteredSources = DEFAULT_RSS_FEEDS.filter((s) => s.language === lang);
+      }
 
-    const [finnhubResults, newsApiResults] = await Promise.all([
-      finnhubPromise,
-      newsApiPromise,
-    ]);
-
-    // Collect all items
-    const allItems: RssItem[] = [...finnhubResults, ...rssItems];
-    
-    // Add news API items
-    for (const item of newsApiResults.items) {
-      allItems.push({
-        title: item.title,
-        link: item.link,
-        pubDate: item.pubDate,
-        source: item.source,
-        sourceId: "newsapi",
-        description: item.description,
-        image: item.image,
-      });
+      // Create the request promise and store it
+      requestPromise = fetchAllFeedData(lang, limit, sources, includeNewsApis, filteredSources).then(
+        (data) => {
+          // Cache the result
+          setCachedData(cacheKey, data);
+          // Remove from pending requests
+          pendingRequests.delete(cacheKey);
+          return data;
+        },
+        (error) => {
+          // Remove from pending requests on error too
+          pendingRequests.delete(cacheKey);
+          throw error;
+        }
+      );
+      pendingRequests.set(cacheKey, requestPromise);
+    } else {
+      console.log(`[RSS] Coalescing request for key: ${cacheKey}`);
     }
 
-    // Deduplicate by link
-    const dedup = new Set<string>();
-    const uniqueItems = allItems.filter((item) => {
-      const key = item.link.toLowerCase();
-      if (dedup.has(key)) return false;
-      dedup.add(key);
-      return true;
-    });
-
-    // Sort by date (newest first)
-    uniqueItems.sort((a, b) => {
-      const dateA = new Date(a.pubDate).getTime();
-      const dateB = new Date(b.pubDate).getTime();
-      return dateB - dateA;
-    });
-
-    // Limit results
-    const limitedItems = uniqueItems.slice(0, limit);
-
-    // Calculate stats - estimate based on items received
-    const uniqueSourceIds = new Set(allItems.map((i) => i.sourceId));
-    const activeSources = uniqueSourceIds.size;
-    const failedSources = Math.max(0, filteredSources.length - activeSources);
-    const newsApiStatus = getNewsServiceStatus();
+    // Wait for the request (either existing or newly created)
+    const feedData = await requestPromise;
 
     return jsonSuccess(
-      {
-        items: limitedItems,
-        stats: {
-          totalItems: limitedItems.length,
-          totalSources: filteredSources.length,
-          activeSources,
-          failedSources,
-          finnhubItems: finnhubResults.length,
-          newsApiItems: newsApiResults.items.length,
-          newsApiSources: newsApiResults.sources,
-          language: lang,
-          newsApiStatus: includeNewsApis ? newsApiStatus : undefined,
-        },
-        requestId,
-      },
+      { ...feedData, cached: false, requestId },
       {
         requestId,
         headers: {
           "cache-control": "public, s-maxage=300, stale-while-revalidate=600",
           "x-ratelimit-remaining": String(rate.remaining),
+          "x-cache": "MISS",
         },
       }
     );
