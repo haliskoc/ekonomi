@@ -148,12 +148,20 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    const response = await fetch(validatedUrl.url.toString(), {
-      headers: { "User-Agent": USER_AGENT, Accept: "application/rss+xml, application/atom+xml, application/xml, text/xml, */*", "Accept-Language": "en-US,en;q=0.9,tr;q=0.8" },
-      redirect: "follow",
-      signal: AbortSignal.timeout(8000),
-      next: { revalidate: 300 },
-    });
+    let response: Response;
+    try {
+      response = await fetch(validatedUrl.url.toString(), {
+        headers: { "User-Agent": USER_AGENT, Accept: "application/rss+xml, application/atom+xml, application/xml, text/xml, */*", "Accept-Language": "en-US,en;q=0.9,tr;q=0.8" },
+        redirect: "follow",
+        signal: AbortSignal.timeout(8000),
+        next: { revalidate: 300 },
+      });
+    } catch {
+      return jsonError("rss upstream timeout", 504, {
+        requestId,
+        code: "UPSTREAM_TIMEOUT",
+      });
+    }
 
     if (!response.ok) {
       return jsonError(`rss fetch failed: ${response.status}`, 502, {
@@ -174,6 +182,13 @@ export async function GET(request: NextRequest) {
         dedup.add(key);
         return true;
       });
+
+    if (!items.length) {
+      return jsonError("rss feed has no parseable items", 502, {
+        requestId,
+        code: "RSS_EMPTY_OR_UNSUPPORTED",
+      });
+    }
 
     return jsonSuccess(
       {

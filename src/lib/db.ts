@@ -1,7 +1,8 @@
 import { neon } from "@neondatabase/serverless";
+import { getOptionalEnv } from "@/lib/env";
 
 export function getDatabaseUrl(): string | null {
-  const url = process.env.DATABASE_URL?.trim();
+  const url = getOptionalEnv("DATABASE_URL")?.trim();
   return url ? url : null;
 }
 

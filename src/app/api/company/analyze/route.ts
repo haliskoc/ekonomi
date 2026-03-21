@@ -11,8 +11,30 @@ type CacheEntry = {
 
 const cache = new Map<string, CacheEntry>();
 const CACHE_TTL_MS = 15 * 60 * 1000;
+const MAX_CACHE_ENTRIES = 500;
 const RATE_LIMIT_WINDOW_MS = 60 * 1000;
 const RATE_LIMIT_COUNT = 20;
+
+function pruneAnalyzeCache(now: number): void {
+  for (const [key, entry] of cache) {
+    if (entry.expiresAt <= now) {
+      cache.delete(key);
+    }
+  }
+
+  if (cache.size <= MAX_CACHE_ENTRIES) {
+    return;
+  }
+
+  const sorted = Array.from(cache.entries()).sort((a, b) => a[1].expiresAt - b[1].expiresAt);
+  const deleteCount = Math.ceil((sorted.length - MAX_CACHE_ENTRIES) + sorted.length * 0.15);
+  for (let i = 0; i < deleteCount; i += 1) {
+    const key = sorted[i]?.[0];
+    if (key) {
+      cache.delete(key);
+    }
+  }
+}
 
 const bodySchema = z.object({
   symbol: z
@@ -56,6 +78,7 @@ export async function POST(request: NextRequest) {
 
     const cacheKey = `${symbol}:${company}`;
     const now = Date.now();
+    pruneAnalyzeCache(now);
     const cached = cache.get(cacheKey);
 
     if (cached && cached.expiresAt > now) {

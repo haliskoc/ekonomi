@@ -5,6 +5,8 @@ export type NewsItem = {
   source: string;
 };
 
+import { getOptionalEnv } from "@/lib/env";
+
 export type MarketSnapshot = {
   symbol: string;
   currency: string;
@@ -187,7 +189,7 @@ type OpenAiArgs = {
 };
 
 async function tryOpenAiScenario(args: OpenAiArgs): Promise<AnalysisOutput | null> {
-  const key = process.env.OPENAI_API_KEY;
+  const key = getOptionalEnv("OPENAI_API_KEY");
   if (!key) {
     return null;
   }

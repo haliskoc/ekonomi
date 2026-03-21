@@ -1,14 +1,15 @@
 import { NextResponse } from "next/server";
+import { getOptionalEnv } from "@/lib/env";
 
 export const AUTH_COOKIE_NAME = "ekonomi_session";
 
 function getAuthSecret(): string {
-  return process.env.AUTH_COOKIE_VALUE?.trim() || "ekonomi-local-session";
+  return getOptionalEnv("AUTH_COOKIE_VALUE")?.trim() || "ekonomi-local-session";
 }
 
 export function validateCredentials(email: string, password: string): boolean {
-  const expectedEmail = process.env.ADMIN_EMAIL?.trim() || "admin@ekonomi.local";
-  const expectedPassword = process.env.ADMIN_PASSWORD?.trim() || "ChangeMe123!";
+  const expectedEmail = getOptionalEnv("ADMIN_EMAIL")?.trim() || "admin@ekonomi.local";
+  const expectedPassword = getOptionalEnv("ADMIN_PASSWORD")?.trim() || "ChangeMe123!";
 
   return email.trim().toLowerCase() === expectedEmail.toLowerCase() && password === expectedPassword;
 }

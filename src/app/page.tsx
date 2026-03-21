@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import { BIST100_COMPANIES, type BistCompany } from "@/lib/bist100";
 import { DEFAULT_RSS_FEEDS } from "@/lib/rssSources";
+import AdvancedWorkspace from "@/app/components/AdvancedWorkspace";
 
 type AnalyzeResponse = {
   symbol: string;
@@ -301,6 +302,11 @@ export default function Home() {
     }
     return selectedCompany.symbol;
   }, [marketUniverse, selectedCompany.symbol]);
+
+  const symbolOptions = useMemo(
+    () => universeCompanies.map((item) => (marketUniverse === "bist100" ? `${item.symbol}.IS` : item.symbol)),
+    [marketUniverse, universeCompanies]
+  );
 
   const rssNewsRows = useMemo(() => {
     const rows: RssNewsRow[] = [];
@@ -850,6 +856,8 @@ export default function Home() {
                 </article>
               </div>
             </div>
+
+            <AdvancedWorkspace key={selectedTicker} symbol={selectedTicker} symbolOptions={symbolOptions} />
           </>
         )}
 
