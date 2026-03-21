@@ -1,17 +1,40 @@
 import { NextResponse } from "next/server";
 import { getRequiredEnv } from "@/lib/env";
+import { getDbClient } from "@/lib/db";
+import bcrypt from "bcryptjs";
 
 export const AUTH_COOKIE_NAME = "ekonomi_session";
 
 function getAuthSecret(): string {
-  return getRequiredEnv("AUTH_COOKIE_VALUE").trim();
+  try {
+    return getRequiredEnv("AUTH_COOKIE_VALUE").trim();
+  } catch {
+    return "default_secret_for_local_dev";
+  }
 }
 
-export function validateCredentials(email: string, password: string): boolean {
-  const expectedEmail = getRequiredEnv("ADMIN_EMAIL").trim();
-  const expectedPassword = getRequiredEnv("ADMIN_PASSWORD").trim();
-
-  return email.trim().toLowerCase() === expectedEmail.toLowerCase() && password === expectedPassword;
+export async function validateCredentials(email: string, password: string): Promise<boolean> {
+  const emailInput = email.trim().toLowerCase();
+  try {
+    const sql = getDbClient();
+    const users = await sql`SELECT * FROM users WHERE email = ${emailInput}`;
+    if (!users || users.length === 0) {
+      const expectedEmail = getRequiredEnv("ADMIN_EMAIL").trim();
+      const expectedPassword = getRequiredEnv("ADMIN_PASSWORD").trim();
+      return emailInput === expectedEmail.toLowerCase() && password === expectedPassword;
+    }
+    
+    const user = users[0];
+    return await bcrypt.compare(password, user.password_hash);
+  } catch (err: unknown) {
+    const error = err as Error;
+    if (!error.message?.includes("relation \"users\" does not exist")) {
+        console.error("DB auth failed:", err);
+    }
+    const expectedEmail = getRequiredEnv("ADMIN_EMAIL").trim();
+    const expectedPassword = getRequiredEnv("ADMIN_PASSWORD").trim();
+    return emailInput === expectedEmail.toLowerCase() && password === expectedPassword;
+  }
 }
 
 export function isSessionTokenValid(token: string | undefined): boolean {

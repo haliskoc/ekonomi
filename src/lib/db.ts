@@ -16,3 +16,9 @@ export async function pingDatabase(): Promise<boolean> {
   const result = await sql`SELECT 1 as ok`;
   return Array.isArray(result) && result[0]?.ok === 1;
 }
+
+export function getDbClient() {
+  const url = getDatabaseUrl();
+  if (!url) throw new Error("DATABASE_URL is not set");
+  return neon(url);
+}

@@ -41,7 +41,8 @@ export async function POST(request: NextRequest) {
     }
 
     const { email, password } = parsed.data;
-    if (!validateCredentials(email, password)) {
+    const isValid = await validateCredentials(email, password);
+    if (!isValid) {
       return jsonError("email or password is incorrect", 401, {
         requestId,
         code: "INVALID_CREDENTIALS",
