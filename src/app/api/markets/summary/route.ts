@@ -3,13 +3,14 @@ import { z } from "zod";
 import { BIST100_COMPANIES } from "@/lib/bist100";
 import { checkRateLimit } from "@/lib/rateLimit";
 import { createRequestId, getClientIp, jsonError, jsonSuccess } from "@/lib/api";
-import { fetchYahooQuotes } from "@/lib/yahoo";
+import { fetchMultipleQuotes, type MarketDataProvider } from "@/lib/marketData";
 
 const RATE_LIMIT_WINDOW_MS = 60 * 1000;
 const RATE_LIMIT_COUNT = 30;
 
 const schema = z.object({
   market: z.enum(["bist100", "us"]).default("bist100"),
+  provider: z.enum(["yahoo", "alphavantage", "twelvedata", "finnhub"]).optional(),
 });
 
 export async function GET(request: NextRequest) {
@@ -33,6 +34,7 @@ export async function GET(request: NextRequest) {
   try {
     const parsed = schema.safeParse({
       market: request.nextUrl.searchParams.get("market") || "bist100",
+      provider: request.nextUrl.searchParams.get("provider") || undefined,
     });
     if (!parsed.success) {
       return jsonError("invalid query", 400, { requestId, code: "INVALID_QUERY" });
@@ -43,13 +45,20 @@ export async function GET(request: NextRequest) {
         ? BIST100_COMPANIES.slice(0, 80).map((item) => `${item.symbol}.IS`)
         : ["^GSPC", "^NDX", "^DJI", "^RUT"];
 
-    const quotes = await fetchYahooQuotes(symbols);
+    // Use the unified market data service with fallback
+    const quotes = await fetchMultipleQuotes(
+      symbols,
+      parsed.data.provider as MarketDataProvider | undefined
+    );
+    
     const stocks = quotes
       .map((item) => ({
         symbol: item.symbol,
-        price: item.regularMarketPrice ?? 0,
-        changePercent: item.regularMarketChangePercent ?? 0,
-        volume: item.regularMarketVolume ?? 0,
+        name: item.name,
+        price: item.price,
+        changePercent: item.changePercent,
+        volume: item.volume,
+        source: item.source,
       }))
       .sort((a, b) => b.changePercent - a.changePercent);
 
@@ -61,6 +70,7 @@ export async function GET(request: NextRequest) {
       {
         market: parsed.data.market,
         generatedAt: new Date().toISOString(),
+        dataSources: [...new Set(quotes.map(q => q.source))],
         gainers,
         losers,
         byVolume,

@@ -7,6 +7,10 @@ const envSchema = z.object({
   ADMIN_EMAIL: z.string().email().optional(),
   ADMIN_PASSWORD: z.string().min(8).optional(),
   AUTH_COOKIE_VALUE: z.string().min(8).optional(),
+  // Borsa veri API anahtarları
+  ALPHAVANTAGE_API_KEY: z.string().min(1).optional(),
+  TWELVE_DATA_API_KEY: z.string().min(1).optional(),
+  FINNHUB_API_KEY: z.string().min(1).optional(),
 });
 
 type Env = z.infer<typeof envSchema>;
