@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { z } from "zod";
+import { XMLParser } from "fast-xml-parser";
 import { createRequestId, getClientIp, jsonError, jsonSuccess } from "@/lib/api";
 import { checkRateLimit } from "@/lib/rateLimit";
 import { DEFAULT_RSS_FEEDS, type RssFeedSource } from "@/lib/rssSources";
@@ -20,6 +21,37 @@ const USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 const RATE_LIMIT_WINDOW_MS = 60 * 1000;
 const RATE_LIMIT_COUNT = 20;
+const FETCH_TIMEOUT_MS = 10000; // 10s timeout - daha güvenilir
+const BATCH_SIZE = 10; // Batch başına kaç feed fetch edilecek
+
+// fast-xml-parser configuration
+const xmlParser = new XMLParser({
+  ignoreAttributes: false,
+  attributeNamePrefix: "@_",
+  textNodeName: "#text",
+  parseAttributeValue: false,
+  parseTagValue: false,
+  trimValues: true,
+  processEntities: true,
+  stopNodes: undefined,
+});
+
+// Helper to extract text value from field (handles CDATA, objects, arrays)
+function extractText(value: any): string {
+  if (!value) return "";
+  if (typeof value === "string") return value;
+  if (typeof value === "object") {
+    // Handle CDATA wrapper
+    if (value.__cdata) return value.__cdata;
+    // Handle text node
+    if (value["#text"]) return value["#text"];
+    // Handle array
+    if (Array.isArray(value) && value.length > 0) return extractText(value[0]);
+    // Fallback to JSON string
+    return JSON.stringify(value);
+  }
+  return String(value);
+}
 
 const querySchema = z.object({
   lang: z.enum(["tr", "en", "all"]).default("all"),
@@ -28,83 +60,101 @@ const querySchema = z.object({
   includeNewsApis: z.coerce.boolean().default(false),
 });
 
-function decodeXml(value: string): string {
-  return value
-    .replace(/<!\[CDATA\[|\]\]>/g, "")
-    .replace(/&/g, "&")
-    .replace(/</g, "<")
-    .replace(/>/g, ">")
-    .replace(/"/g, '"')
+// HTML entity decode (Node.js compatible)
+function decodeHtmlEntities(value: any): string {
+  if (!value) return "";
+  const str = typeof value === "string" ? value : JSON.stringify(value);
+  return str
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
     .replace(/&#39;/g, "'")
+    .replace(/&#x27;/g, "'")
+    .replace(/&#x2F;/g, "/")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&hellip;/g, "...")
+    .replace(/<!\[CDATA\[|\]\]>/g, "")
     .trim();
 }
 
-function getTag(text: string, tag: string): string {
-  const match = text.match(new RegExp(`<${tag}>([\\s\\S]*?)<\\/${tag}>`, "i"));
-  return match ? decodeXml(match[1]) : "";
-}
-
-function stripHtml(value: string): string {
-  return decodeXml(value.replace(/<[^>]+>/g, " ")).replace(/\s+/g, " ").trim();
-}
-
-function extractDescription(block: string, isAtom: boolean): string {
-  if (isAtom) {
-    const atomContent =
-      block.match(/<summary[^>]*>([\s\S]*?)<\/summary>/i)?.[1] ??
-      block.match(/<content[^>]*>([\s\S]*?)<\/content>/i)?.[1] ??
-      "";
-    return stripHtml(atomContent).slice(0, 260);
-  }
-  const rssContent = getTag(block, "content:encoded") || getTag(block, "description");
-  return stripHtml(rssContent).slice(0, 260);
-}
-
-function extractImageUrl(block: string): string {
-  const mediaContent = block.match(/<media:content[^>]*url=["']([^"']+)["'][^>]*>/i)?.[1];
-  if (mediaContent) return decodeXml(mediaContent);
-
-  const mediaThumb = block.match(/<media:thumbnail[^>]*url=["']([^"']+)["'][^>]*>/i)?.[1];
-  if (mediaThumb) return decodeXml(mediaThumb);
-
-  const enclosureImage =
-    block.match(/<enclosure[^>]*type=["'][^"']*image[^"']*["'][^>]*url=["']([^"']+)["'][^>]*>/i)?.[1] ??
-    block.match(/<enclosure[^>]*url=["']([^"']+)["'][^>]*type=["'][^"']*image[^"']*["'][^>]*>/i)?.[1];
-  if (enclosureImage) return decodeXml(enclosureImage);
-
-  const htmlImage = block.match(/<img[^>]*src=["']([^"']+)["'][^>]*>/i)?.[1];
-  return htmlImage ? decodeXml(htmlImage) : "";
+function stripHtml(value: any): string {
+  if (!value) return "";
+  const str = typeof value === "string" ? value : JSON.stringify(value);
+  return decodeHtmlEntities(str.replace(/<[^>]+>/g, " ")).replace(/\s+/g, " ").trim();
 }
 
 function parseRssItems(xml: string, source: RssFeedSource): RssItem[] {
-  const rssItems = xml.match(/<item>[\s\S]*?<\/item>/gi) ?? [];
-  if (rssItems.length) {
-    return rssItems.slice(0, 15).map((item) => ({
-      title: getTag(item, "title") || "Untitled",
-      link: getTag(item, "link"),
-      pubDate: getTag(item, "pubDate") || new Date().toISOString(),
-      source: source.name,
-      sourceId: source.id,
-      description: extractDescription(item, false),
-      image: extractImageUrl(item) || undefined,
-    }));
+  try {
+    const parsed = xmlParser.parse(xml);
+    
+    // RSS 2.0 format
+    if (parsed.rss?.channel?.item) {
+      const items = Array.isArray(parsed.rss.channel.item) 
+        ? parsed.rss.channel.item 
+        : [parsed.rss.channel.item];
+      
+      return items.slice(0, 15).map((item: any) => {
+        // Extract image from various sources
+        let imageUrl = "";
+        if (item["media:content"]) {
+          imageUrl = item["media:content"]["@_url"] || item["media:content"]?.url || "";
+        } else if (item["media:thumbnail"]) {
+          imageUrl = item["media:thumbnail"]["@_url"] || item["media:thumbnail"]?.url || "";
+        } else if (item.enclosure?.["@_url"]) {
+          imageUrl = item.enclosure["@_url"];
+        }
+        
+        const description = item["content:encoded"] || item.description || "";
+        
+        return {
+          title: extractText(item.title) || "Untitled",
+          link: extractText(item.link) || "",
+          pubDate: extractText(item.pubDate) || new Date().toISOString(),
+          source: source.name,
+          sourceId: source.id,
+          description: stripHtml(extractText(description)).slice(0, 260),
+          image: imageUrl || undefined,
+        };
+      });
+    }
+    
+    // Atom format
+    if (parsed.feed?.entry) {
+      const entries = Array.isArray(parsed.feed.entry) 
+        ? parsed.feed.entry 
+        : [parsed.feed.entry];
+      
+      return entries.slice(0, 15).map((entry: any) => {
+        // Atom link extraction
+        let link = "";
+        if (Array.isArray(entry.link)) {
+          const alternate = entry.link.find((l: any) => l["@_rel"] === "alternate");
+          link = alternate?.["@_href"] || entry.link[0]?.["@_href"] || "";
+        } else if (entry.link) {
+          link = entry.link["@_href"] || entry.link.href || "";
+        }
+        
+        // Extract summary/content
+        const content = entry.content || entry.summary || "";
+        
+        return {
+          title: extractText(entry.title) || "Untitled",
+          link: extractText(link),
+          pubDate: extractText(entry.updated || entry.published) || new Date().toISOString(),
+          source: source.name,
+          sourceId: source.id,
+          description: stripHtml(extractText(content)).slice(0, 260),
+          image: entry.media?.content?.["@_url"] || entry.media?.thumbnail?.["@_url"] || "",
+        };
+      });
+    }
+    
+    return [];
+  } catch (error) {
+    console.warn(`XML parse error for ${source.name}:`, error);
+    return [];
   }
-
-  const atomItems = xml.match(/<entry>[\s\S]*?<\/entry>/gi) ?? [];
-  return atomItems.slice(0, 15).map((entry) => {
-    const title = getTag(entry, "title") || "Untitled";
-    const updated = getTag(entry, "updated") || getTag(entry, "published") || new Date().toISOString();
-    const linkMatch = entry.match(/<link[^>]*href=["']([^"']+)["'][^>]*>/i);
-    return {
-      title,
-      link: linkMatch ? decodeXml(linkMatch[1]) : "",
-      pubDate: updated,
-      source: source.name,
-      sourceId: source.id,
-      description: extractDescription(entry, true),
-      image: extractImageUrl(entry) || undefined,
-    };
-  });
 }
 
 async function fetchSingleFeed(source: RssFeedSource): Promise<RssItem[]> {
@@ -116,7 +166,7 @@ async function fetchSingleFeed(source: RssFeedSource): Promise<RssItem[]> {
         "Accept-Language": "en-US,en;q=0.9,tr;q=0.8",
       },
       redirect: "follow",
-      signal: AbortSignal.timeout(6000),
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
 
     if (!response.ok) {
@@ -131,6 +181,37 @@ async function fetchSingleFeed(source: RssFeedSource): Promise<RssItem[]> {
     console.warn(`RSS fetch error for ${source.name}:`, error);
     return [];
   }
+}
+
+// Batch fetch with controlled concurrency
+async function fetchFeedsInBatches(
+  sources: RssFeedSource[],
+  batchSize: number = BATCH_SIZE
+): Promise<RssItem[]> {
+  // Sort by priority first (lower number = higher priority)
+  const sortedSources = [...sources].sort((a, b) => a.priority - b.priority);
+  
+  const allItems: RssItem[] = [];
+  
+  // Process in batches
+  for (let i = 0; i < sortedSources.length; i += batchSize) {
+    const batch = sortedSources.slice(i, i + batchSize);
+    const batchPromises = batch.map((source) => fetchSingleFeed(source));
+    const batchResults = await Promise.allSettled(batchPromises);
+    
+    for (const result of batchResults) {
+      if (result.status === "fulfilled") {
+        allItems.push(...result.value);
+      }
+    }
+    
+    // Small delay between batches to avoid overwhelming servers
+    if (i + batchSize < sortedSources.length) {
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+  }
+  
+  return allItems;
 }
 
 async function fetchFinnhubNewsAsRss(): Promise<RssItem[]> {
@@ -202,8 +283,8 @@ export async function GET(request: NextRequest) {
       filteredSources = DEFAULT_RSS_FEEDS.filter((s) => s.language === lang);
     }
 
-    // Fetch RSS feeds in parallel
-    const rssPromises = filteredSources.map((source) => fetchSingleFeed(source));
+    // Fetch RSS feeds in batches (with priority ordering)
+    const rssItems = await fetchFeedsInBatches(filteredSources, BATCH_SIZE);
     const finnhubPromise = fetchFinnhubNewsAsRss();
     
     // Optionally fetch from news APIs
@@ -211,14 +292,13 @@ export async function GET(request: NextRequest) {
       ? fetchAllNews(lang === "tr" ? "ekonomi finans" : "economy finance", lang === "all" ? "en" : lang, Math.min(limit, 30))
       : Promise.resolve({ items: [], sources: [] });
 
-    const [rssResults, finnhubResults, newsApiResults] = await Promise.all([
-      Promise.allSettled(rssPromises),
+    const [finnhubResults, newsApiResults] = await Promise.all([
       finnhubPromise,
       newsApiPromise,
     ]);
 
     // Collect all items
-    const allItems: RssItem[] = [...finnhubResults];
+    const allItems: RssItem[] = [...finnhubResults, ...rssItems];
     
     // Add news API items
     for (const item of newsApiResults.items) {
@@ -231,12 +311,6 @@ export async function GET(request: NextRequest) {
         description: item.description,
         image: item.image,
       });
-    }
-
-    for (const result of rssResults) {
-      if (result.status === "fulfilled") {
-        allItems.push(...result.value);
-      }
     }
 
     // Deduplicate by link
@@ -258,9 +332,10 @@ export async function GET(request: NextRequest) {
     // Limit results
     const limitedItems = uniqueItems.slice(0, limit);
 
-    // Calculate stats
-    const activeSources = rssResults.filter((r) => r.status === "fulfilled" && r.value.length > 0).length;
-    const failedSources = rssResults.filter((r) => r.status === "rejected").length;
+    // Calculate stats - estimate based on items received
+    const uniqueSourceIds = new Set(allItems.map((i) => i.sourceId));
+    const activeSources = uniqueSourceIds.size;
+    const failedSources = Math.max(0, filteredSources.length - activeSources);
     const newsApiStatus = getNewsServiceStatus();
 
     return jsonSuccess(
