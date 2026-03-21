@@ -49,9 +49,15 @@ export function getEnv(): Env {
 }
 
 export function getOptionalEnv<K extends keyof Env>(key: K): Env[K] {
-  // For optional env vars, read directly without strict validation
   const value = readEnvValue(key as string);
-  return value as Env[K];
+  if (value === undefined) return undefined as Env[K];
+  // validate against schema
+  const parsed = envSchema.shape[key].safeParse(value);
+  if (!parsed.success) {
+    console.warn(`Environment variable ${key} failed validation: ${parsed.error.message}`);
+    return undefined as Env[K];
+  }
+  return parsed.data as Env[K];
 }
 
 export function getRequiredEnv<K extends keyof Env>(key: K): NonNullable<Env[K]> {

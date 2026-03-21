@@ -41,7 +41,6 @@ export async function GET(request: NextRequest) {
       service: "ekonomi",
       now: new Date().toISOString(),
       checks: {
-        openaiConfigured: Boolean(process.env.OPENAI_API_KEY),
         dbConfigured,
         dbReachable,
       },

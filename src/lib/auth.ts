@@ -6,11 +6,11 @@ import bcrypt from "bcryptjs";
 export const AUTH_COOKIE_NAME = "ekonomi_session";
 
 function getAuthSecret(): string {
-  try {
-    return getRequiredEnv("AUTH_COOKIE_VALUE").trim();
-  } catch {
-    return "default_secret_for_local_dev";
+  const secret = getRequiredEnv("AUTH_COOKIE_VALUE").trim();
+  if (!secret || secret.length < 16) {
+    throw new Error("AUTH_COOKIE_VALUE must be at least 16 characters for security.");
   }
+  return secret;
 }
 
 export async function validateCredentials(email: string, password: string): Promise<boolean> {
@@ -39,7 +39,14 @@ export async function validateCredentials(email: string, password: string): Prom
 
 export function isSessionTokenValid(token: string | undefined): boolean {
   if (!token) return false;
-  return token === getAuthSecret();
+  const secret = getAuthSecret();
+  if (token.length !== secret.length) return false;
+  // Constant time string comparison to prevent timing attacks
+  let mismatch = 0;
+  for (let i = 0; i < token.length; ++i) {
+    mismatch |= (token.charCodeAt(i) ^ secret.charCodeAt(i));
+  }
+  return mismatch === 0;
 }
 
 export function setAuthCookie(response: NextResponse): void {
