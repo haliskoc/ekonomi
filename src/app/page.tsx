@@ -350,7 +350,7 @@ export default function Home() {
     const relatedCompanies = queryClean ? universeCompanies.filter((company) => companyMatchesQuery(company, queryClean)).slice(0, 5) : [];
     const queryTerms = relatedCompanies.flatMap((company) => buildCompanyTerms(company));
 
-    return rssNewsRows
+    const scoredRows = rssNewsRows
       .map((item) => ({
         item,
         selectedScore: rankRssItem(item, "", selectedTerms),
@@ -367,6 +367,13 @@ export default function Home() {
         return bTime - aTime;
       })
       .map((row) => row.item);
+
+    if (scoredRows.length > 0) {
+      return scoredRows;
+    }
+
+    // Fallback: if strict scoring finds no match, show latest feed rows.
+    return rssNewsRows.slice(0, 18);
   }, [query, rssNewsRows, selectedCompany, universeCompanies]);
 
   const filteredRssNewsRows = useMemo(() => {
@@ -558,11 +565,18 @@ export default function Home() {
     autoPreviewAttemptedRef.current.delete(feedUrl);
   }
 
+  async function handleLogout() {
+    await fetch("/api/auth/logout", {
+      method: "POST",
+    });
+    window.location.href = "/login";
+  }
+
   return (
     <div className="min-h-screen text-white">
       {/* Header / Tabs */}
       <header className="sticky top-0 z-20 border-b border-white/15 bg-[#0a101bcc]/80 backdrop-blur-md">
-        <div className="mx-auto max-w-[1500px] flex items-center gap-6 px-4 md:px-6">
+        <div className="mx-auto flex max-w-[1500px] items-center gap-6 px-4 md:px-6">
           <h1 className="py-4 text-lg font-bold tracking-widest uppercase border-r border-white/20 pr-6">Algoturk</h1>
           <nav className="flex items-center gap-4">
             <button 
@@ -578,6 +592,13 @@ export default function Home() {
               RSS Haber Merkezi
             </button>
           </nav>
+          <button
+            type="button"
+            onClick={handleLogout}
+            className="ml-auto border border-white/40 px-3 py-2 text-xs font-semibold uppercase tracking-[0.15em] hover:bg-white hover:text-black"
+          >
+            Cikis
+          </button>
         </div>
       </header>
 
@@ -668,9 +689,9 @@ export default function Home() {
               {marketError ? <p className="mt-3 border border-white/20 bg-[#170f14] px-3 py-2 text-xs text-white">{marketError}</p> : null}
             </section>
 
-            <div className="mt-4 grid gap-4 xl:grid-cols-[1fr_2.5fr]">
+            <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(340px,1fr)_minmax(0,2.5fr)]">
               {/* Sol Kolon: Sirket Listesi */}
-              <article className="flex h-[85vh] flex-col rounded-xl border border-white/15 bg-[#0f1728bf] p-3 shadow-[0_20px_40px_rgba(0,0,0,0.25)]">
+              <article className="min-w-0 flex h-[85vh] flex-col rounded-xl border border-white/15 bg-[#0f1728bf] p-3 shadow-[0_20px_40px_rgba(0,0,0,0.25)]">
                 <div className="flex items-center justify-between border-b border-white/20 pb-2">
                   <h2 className="text-sm font-semibold uppercase tracking-[0.2em]">Sirketler</h2>
                   <span className="text-xs text-white/60">Seç</span>
@@ -697,7 +718,9 @@ export default function Home() {
                         <div className="min-w-0">
                           <p className="text-sm font-semibold">{item.symbol}</p>
                           <p className="truncate text-xs opacity-80">{item.nameTr || item.name}</p>
-                          <p className="truncate text-[11px] opacity-60">{item.nameEn || item.name}</p>
+                          {item.nameEn && item.nameEn !== item.nameTr ? (
+                            <p className="truncate text-[11px] opacity-60">{item.nameEn}</p>
+                          ) : null}
                         </div>
                       </div>
                     </button>
@@ -708,7 +731,7 @@ export default function Home() {
               </article>
 
               {/* Sag Kolon: Detaylar ve Haberler */}
-              <div className="flex flex-col gap-4 overflow-y-auto h-[85vh] pb-4">
+              <div className="min-w-0 flex h-[85vh] flex-col gap-4 overflow-y-auto pb-4">
                 {/* Ust Kisim: Analiz ve Bilgi */}
                 <article className="rounded-xl border border-white/15 bg-[#0f1728bf] p-4 shadow-[0_20px_40px_rgba(0,0,0,0.25)]">
                   <h2 className="border-b border-white/20 pb-2 text-sm font-semibold flex items-center justify-between">

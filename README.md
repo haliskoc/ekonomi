@@ -48,6 +48,17 @@ npm run validate
 
 This command executes lint and production build checks in sequence.
 
+## Login
+
+The app now includes a login screen at `/login` and route protection via middleware.
+
+Defaults (if env vars are not set):
+
+- Email: `admin@ekonomi.local`
+- Password: `ChangeMe123!`
+
+Recommended: set `ADMIN_EMAIL`, `ADMIN_PASSWORD`, and `AUTH_COOKIE_VALUE` in `.env.local` and Vercel project settings.
+
 ## API Contract
 
 Endpoint:

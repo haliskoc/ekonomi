@@ -2,10 +2,9 @@ import { execSync } from "node:child_process";
 import https from "node:https";
 
 const credRaw = execSync('printf "protocol=https\\nhost=github.com\\n\\n" | git credential fill', { encoding: "utf8" });
-const username = credRaw.split("\n").find((x) => x.startsWith("username="))?.split("=")[1]?.trim();
 const token = credRaw.split("\n").find((x) => x.startsWith("password="))?.split("=")[1]?.trim();
 
-if (!username || !token) {
+if (!token) {
   console.error("missing-github-credentials");
   process.exit(1);
 }
@@ -30,10 +29,7 @@ const req = https.request(
     },
   },
   (res) => {
-    let data = "";
-    res.on("data", (chunk) => {
-      data += chunk;
-    });
+    res.on("data", () => {});
     res.on("end", () => {
       if (res.statusCode === 201 || res.statusCode === 422) {
         console.log(`repo-ready:${res.statusCode}`);
