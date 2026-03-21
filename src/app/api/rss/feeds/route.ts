@@ -28,8 +28,9 @@ const BATCH_SIZE = 10; // Batch başına kaç feed fetch edilecek
 // PERFORMANCE OPTIMIZATIONS
 // ============================================
 
-// 1. In-memory cache with TTL (2 minutes)
+// 1. In-memory cache with TTL (2 minutes) and LRU eviction
 const CACHE_TTL = 2 * 60 * 1000; // 2 minutes
+const MAX_CACHE_SIZE = 100; // Limit cache entries to prevent unbounded growth
 interface CacheEntry<T> {
   data: T;
   timestamp: number;
@@ -56,6 +57,21 @@ function getCachedData<T>(key: string): T | null {
 }
 
 function setCachedData<T>(key: string, data: T): void {
+  // LRU eviction: if cache exceeds limit, remove oldest entries
+  if (feedCache.size >= MAX_CACHE_SIZE) {
+    // Find and remove the oldest entry
+    let oldestKey: string | null = null;
+    let oldestTime = Infinity;
+    for (const [k, entry] of feedCache) {
+      if (entry.timestamp < oldestTime) {
+        oldestTime = entry.timestamp;
+        oldestKey = k;
+      }
+    }
+    if (oldestKey) {
+      feedCache.delete(oldestKey);
+    }
+  }
   feedCache.set(key, { data, timestamp: Date.now() });
 }
 
@@ -433,8 +449,12 @@ export async function GET(request: NextRequest) {
       // Create the request promise and store it
       requestPromise = fetchAllFeedData(lang, limit, sources, includeNewsApis, filteredSources).then(
         (data) => {
-          // Cache the result
-          setCachedData(cacheKey, data);
+          // Cache the result - wrap in try-catch to ensure pendingRequests.delete() always executes
+          try {
+            setCachedData(cacheKey, data);
+          } catch (cacheError) {
+            console.warn("Cache write failed:", cacheError);
+          }
           // Remove from pending requests
           pendingRequests.delete(cacheKey);
           return data;
