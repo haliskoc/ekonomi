@@ -695,9 +695,9 @@ export default function Home() {
               {marketError ? <p className="mt-3 border border-white/20 bg-[#170f14] px-3 py-2 text-xs text-white">{marketError}</p> : null}
             </section>
 
-            <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(340px,1fr)_minmax(0,2.5fr)]">
+            <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(340px,1fr)_minmax(0,2.5fr)] items-start">
               {/* Sol Kolon: Sirket Listesi */}
-              <article className="min-w-0 flex h-[60vh] flex-col rounded-xl border border-white/15 bg-[#0f1728bf] p-3 shadow-[0_20px_40px_rgba(0,0,0,0.25)]">
+              <article className="min-w-0 flex h-[calc(100vh-100px)] sticky top-[80px] flex-col rounded-xl border border-white/15 bg-[#0f1728bf] p-3 shadow-[0_20px_40px_rgba(0,0,0,0.25)]">
                 <div className="flex items-center justify-between border-b border-white/20 pb-2">
                   <h2 className="text-sm font-semibold uppercase tracking-[0.2em]">Sirketler</h2>
                   <span className="text-xs text-white/60">Seç</span>
@@ -737,7 +737,7 @@ export default function Home() {
               </article>
 
               {/* Sag Kolon: Detaylar ve Haberler */}
-              <div className="min-w-0 flex h-[60vh] flex-col gap-4 overflow-y-auto pb-4">
+              <div className="min-w-0 flex flex-col gap-4 pb-4">
                 {/* Ust Kisim: Analiz ve Bilgi */}
                 <article className="rounded-xl border border-white/15 bg-[#0f1728bf] p-4 shadow-[0_20px_40px_rgba(0,0,0,0.25)]">
                   <h2 className="border-b border-white/20 pb-2 text-sm font-semibold flex items-center justify-between">
