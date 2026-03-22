@@ -337,6 +337,7 @@ export default function AdvancedWorkspace({ symbol, symbolOptions }: Props) {
   const [rssPage, setRssPage] = useState(1);
   const [rssItems, setRssItems] = useState<RssItem[]>([]);
   const [rssLoading, setRssLoading] = useState(false);
+  const [dataLoading, setDataLoading] = useState(true);
   const chartRef = useRef<HTMLDivElement | null>(null);
   const chartApiRef = useRef<IChartApi | null>(null);
 
@@ -358,44 +359,115 @@ export default function AdvancedWorkspace({ symbol, symbolOptions }: Props) {
       };
       const intervalMap: Record<TimePeriod, string> = {
         "1D": "5m",
-        "1H": "1h",
+        "1H": "5m",
         "4H": "1h",
         "1W": "1d",
         "1M": "1d",
       };
 
-      const [techRes, finRes, sumRes, macroRes, globalRes, alertRes, sectorRes] = await Promise.all([
-        fetch(`/api/company/technicals?symbol=${encodeURIComponent(symbol)}&range=${rangeMap[timePeriod]}&interval=${intervalMap[timePeriod]}`),
-        fetch(`/api/company/financials?symbol=${encodeURIComponent(symbol)}`),
-        fetch("/api/markets/summary?market=bist100"),
-        fetch("/api/macro/indicators"),
-        fetch("/api/markets/global"),
-        fetch("/api/alerts"),
-        fetch(`/api/sector/analyze?symbols=${encodeURIComponent(compareSymbols.join(","))}&sector=mixed`),
-      ]);
+      setDataLoading(true);
+      try {
+        // Fetch technicals data with error handling
+        let techData: TechnicalPoint[] = [];
+        try {
+          const techRes = await fetch(`/api/company/technicals?symbol=${encodeURIComponent(symbol)}&range=${rangeMap[timePeriod]}&interval=${intervalMap[timePeriod]}`);
+          if (techRes.ok) {
+            const techJson = (await techRes.json()) as { points?: TechnicalPoint[] };
+            techData = techJson.points ?? [];
+          } else {
+            console.warn("Technicals API returned:", techRes.status);
+          }
+        } catch (e) {
+          console.warn("Technicals fetch failed:", e);
+        }
+        setTechnicals(techData);
 
-      const techJson = (await techRes.json()) as { points?: TechnicalPoint[] };
-      const finJson = (await finRes.json()) as FinancialsResponse;
-      const sumJson = (await sumRes.json()) as { gainers: CompareRow[]; losers: CompareRow[]; byVolume: CompareRow[] };
-      const macroJson = (await macroRes.json()) as { indicators?: Record<string, number | null> };
-      const globalJson = (await globalRes.json()) as { markets?: Array<{ id: string; label: string; price: number | null; changePercent: number | null }> };
-      const alertJson = (await alertRes.json()) as { alerts?: AlertItem[] };
-      const sectorJson = (await sectorRes.json()) as { averageDayChangePercent?: number | null; companyCount?: number };
+        // Fetch financials with error handling
+        let finData: FinancialsResponse | null = null;
+        try {
+          const finRes = await fetch(`/api/company/financials?symbol=${encodeURIComponent(symbol)}`);
+          if (finRes.ok) {
+            finData = (await finRes.json()) as FinancialsResponse;
+          }
+        } catch (e) {
+          console.warn("Financials fetch failed:", e);
+        }
+        setFinancials(finData);
 
-      setTechnicals(techJson.points ?? []);
-      setFinancials(finJson);
-      setSummary({
-        gainers: sumJson.gainers ?? [],
-        losers: sumJson.losers ?? [],
-        byVolume: sumJson.byVolume ?? [],
-      });
-      setMacro(macroJson.indicators ?? null);
-      setGlobal(globalJson.markets ?? []);
-      setAlerts(alertJson.alerts ?? []);
-      setSector({
-        averageDayChangePercent: sectorJson.averageDayChangePercent ?? null,
-        companyCount: sectorJson.companyCount ?? 0,
-      });
+        // Fetch market summary with error handling
+        let sumData: { gainers: CompareRow[]; losers: CompareRow[]; byVolume: CompareRow[] } | null = null;
+        try {
+          const sumRes = await fetch("/api/markets/summary?market=bist100");
+          if (sumRes.ok) {
+            sumData = (await sumRes.json()) as { gainers: CompareRow[]; losers: CompareRow[]; byVolume: CompareRow[] };
+          }
+        } catch (e) {
+          console.warn("Market summary fetch failed:", e);
+        }
+        setSummary(sumData ? {
+          gainers: sumData.gainers ?? [],
+          losers: sumData.losers ?? [],
+          byVolume: sumData.byVolume ?? [],
+        } : null);
+
+        // Fetch macro indicators with error handling
+        let macroData: Record<string, number | null> | null = null;
+        try {
+          const macroRes = await fetch("/api/macro/indicators");
+          if (macroRes.ok) {
+            const macroJson = (await macroRes.json()) as { indicators?: Record<string, number | null> };
+            macroData = macroJson.indicators ?? null;
+          }
+        } catch (e) {
+          console.warn("Macro fetch failed:", e);
+        }
+        setMacro(macroData);
+
+        // Fetch global markets with error handling
+        let globalData: Array<{ id: string; label: string; price: number | null; changePercent: number | null }> = [];
+        try {
+          const globalRes = await fetch("/api/markets/global");
+          if (globalRes.ok) {
+            const globalJson = (await globalRes.json()) as { markets?: Array<{ id: string; label: string; price: number | null; changePercent: number | null }> };
+            globalData = globalJson.markets ?? [];
+          }
+        } catch (e) {
+          console.warn("Global markets fetch failed:", e);
+        }
+        setGlobal(globalData);
+
+        // Fetch alerts with error handling
+        let alertsData: AlertItem[] = [];
+        try {
+          const alertRes = await fetch("/api/alerts");
+          if (alertRes.ok) {
+            const alertJson = (await alertRes.json()) as { alerts?: AlertItem[] };
+            alertsData = alertJson.alerts ?? [];
+          }
+        } catch (e) {
+          console.warn("Alerts fetch failed:", e);
+        }
+        setAlerts(alertsData);
+
+        // Fetch sector data with error handling
+        let sectorData: { averageDayChangePercent: number | null; companyCount: number } = { averageDayChangePercent: null, companyCount: 0 };
+        try {
+          const sectorRes = await fetch(`/api/sector/analyze?symbols=${encodeURIComponent(compareSymbols.join(","))}&sector=mixed`);
+          if (sectorRes.ok) {
+            const sectorJson = (await sectorRes.json()) as { averageDayChangePercent?: number | null; companyCount?: number };
+            sectorData = {
+              averageDayChangePercent: sectorJson.averageDayChangePercent ?? null,
+              companyCount: sectorJson.companyCount ?? 0,
+            };
+          }
+        } catch (e) {
+          console.warn("Sector fetch failed:", e);
+        }
+        setSector(sectorData);
+
+      } catch (error) {
+        console.error("Data loading error:", error);
+      }
     }
 
     void loadData();

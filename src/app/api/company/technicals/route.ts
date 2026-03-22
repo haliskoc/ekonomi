@@ -9,8 +9,8 @@ const RATE_LIMIT_COUNT = 30;
 
 const schema = z.object({
   symbol: z.string().trim().min(1).max(24),
-  range: z.enum(["1mo", "3mo", "6mo", "1y"]).default("6mo"),
-  interval: z.enum(["1d", "1wk"]).default("1d"),
+  range: z.enum(["1d", "5d", "1mo", "3mo", "6mo", "1y", "2y", "5y", "ytd", "max"]).default("6mo"),
+  interval: z.enum(["1m", "2m", "5m", "15m", "30m", "60m", "90m", "1h", "1d", "5d", "1wk", "1mo"]).default("1d"),
 });
 
 export async function GET(request: NextRequest) {
