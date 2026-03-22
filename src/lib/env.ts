@@ -6,7 +6,8 @@ const envSchema = z.object({
   OPENAI_API_KEY: z.string().min(20).optional(),
   ADMIN_EMAIL: z.string().email().optional(),
   ADMIN_PASSWORD: z.string().min(8).optional(),
-  AUTH_COOKIE_VALUE: z.string().min(8).optional(),
+  ADMIN_PASSWORD_HASH: z.string().min(60).optional(), // bcrypt hash length
+  AUTH_COOKIE_VALUE: z.string().min(16).optional(), // Increased minimum for security
   // Borsa veri API anahtarları
   ALPHAVANTAGE_API_KEY: z.string().min(1).optional(),
   TWELVE_DATA_API_KEY: z.string().min(1).optional(),

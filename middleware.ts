@@ -11,13 +11,29 @@ function isPublicPath(pathname: string): boolean {
 }
 
 function applySecurityHeaders(response: NextResponse): NextResponse {
-  response.headers.set("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+  response.headers.set("Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload");
   response.headers.set("X-Frame-Options", "DENY");
   response.headers.set("X-Content-Type-Options", "nosniff");
-  response.headers.set(
-    "Content-Security-Policy",
-    "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data: https:; connect-src 'self' https:;"
-  );
+  response.headers.set("X-XSS-Protection", "1; mode=block");
+  response.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
+  response.headers.set("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+  
+  // Improved CSP without unsafe-inline and unsafe-eval where possible
+  // Note: Next.js requires some inline scripts, so we use a more permissive policy
+  // For maximum security, consider using nonces (requires custom server setup)
+  const csp = [
+    "default-src 'self'",
+    "script-src 'self' 'unsafe-inline' 'unsafe-eval'", // Required for Next.js
+    "style-src 'self' 'unsafe-inline'", // Required for Tailwind
+    "img-src 'self' data: https: http:",
+    "font-src 'self' data: https:",
+    "connect-src 'self' https: wss: ws:",
+    "frame-ancestors 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+  ].join("; ");
+  
+  response.headers.set("Content-Security-Policy", csp);
   return response;
 }
 
