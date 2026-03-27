@@ -116,65 +116,74 @@ export async function fetchCompanyNews(input: string, limit = 7): Promise<NewsIt
 }
 
 export async function fetchMarketSnapshot(symbol: string): Promise<MarketSnapshot> {
-  const quoteUrl = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(symbol)}`;
   const chartUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=1mo&interval=1d`;
+  const chartRes = await fetch(chartUrl, {
+    headers: { "User-Agent": USER_AGENT },
+    next: { revalidate: 900 },
+  });
 
-  const [quoteRes, chartRes] = await Promise.all([
-    fetch(quoteUrl, { headers: { "User-Agent": USER_AGENT }, next: { revalidate: 900 } }),
-    fetch(chartUrl, { headers: { "User-Agent": USER_AGENT }, next: { revalidate: 900 } }),
-  ]);
-
-  if (!quoteRes.ok) {
-    throw new Error(`Quote fetch failed: ${quoteRes.status}`);
-  }
-
-  const quoteJson = await quoteRes.json();
-  const quote = quoteJson?.quoteResponse?.result?.[0];
-
-  if (!quote) {
-    throw new Error("Symbol not found.");
+  if (!chartRes.ok) {
+    throw new Error(`Chart fetch failed: ${chartRes.status}`);
   }
 
   let oneMonthChangePercent: number | null = null;
   let dailyPrices: { date: string; close: number }[] = [];
-  if (chartRes.ok) {
-    const chartJson = await chartRes.json();
-    const chart = chartJson?.chart?.result?.[0];
-    const closes: number[] = chartJson?.chart?.result?.[0]?.indicators?.quote?.[0]?.close ?? [];
-    const validCloses = closes.filter((v) => typeof v === "number");
-    if (validCloses.length >= 2) {
-      const first = validCloses[0];
-      const last = validCloses[validCloses.length - 1];
-      if (first !== 0) {
-        oneMonthChangePercent = ((last - first) / first) * 100;
-      }
-    }
+  const chartJson = await chartRes.json();
+  const chart = chartJson?.chart?.result?.[0];
+  const meta = chart?.meta;
 
-    const timestamps: number[] = chart?.timestamp ?? [];
-    dailyPrices = closes
-      .map((close, index) => {
-        const ts = timestamps[index];
-        if (typeof close !== "number" || typeof ts !== "number") {
-          return null;
-        }
-
-        return {
-          date: new Date(ts * 1000).toISOString().slice(0, 10),
-          close,
-        };
-      })
-      .filter((entry): entry is { date: string; close: number } => entry !== null)
-      .slice(-22);
+  if (!chart || !meta) {
+    throw new Error("Symbol not found.");
   }
 
+  const closes: number[] = chart?.indicators?.quote?.[0]?.close ?? [];
+  const validCloses = closes.filter((v): v is number => typeof v === "number");
+  if (validCloses.length >= 2) {
+    const first = validCloses[0];
+    const last = validCloses[validCloses.length - 1];
+    if (first !== 0) {
+      oneMonthChangePercent = ((last - first) / first) * 100;
+    }
+  }
+
+  const timestamps: number[] = chart?.timestamp ?? [];
+  dailyPrices = closes
+    .map((close, index) => {
+      const ts = timestamps[index];
+      if (typeof close !== "number" || typeof ts !== "number") {
+        return null;
+      }
+
+      return {
+        date: new Date(ts * 1000).toISOString().slice(0, 10),
+        close,
+      };
+    })
+    .filter((entry): entry is { date: string; close: number } => entry !== null)
+    .slice(-22);
+
+  const regularMarketPrice = typeof meta.regularMarketPrice === "number" ? meta.regularMarketPrice : validCloses.at(-1) ?? 0;
+  const previousClose =
+    typeof meta.previousClose === "number"
+      ? meta.previousClose
+      : typeof meta.chartPreviousClose === "number"
+        ? meta.chartPreviousClose
+        : validCloses.length >= 2
+          ? validCloses[validCloses.length - 2]
+          : regularMarketPrice;
+  const dayChangePercent =
+    previousClose && regularMarketPrice
+      ? ((regularMarketPrice - previousClose) / previousClose) * 100
+      : 0;
+
   return {
-    symbol: quote.symbol,
-    currency: quote.currency || "USD",
-    regularMarketPrice: quote.regularMarketPrice || 0,
-    previousClose: quote.regularMarketPreviousClose || quote.regularMarketPrice || 0,
-    dayChangePercent: quote.regularMarketChangePercent || 0,
+    symbol: meta.symbol || symbol,
+    currency: meta.currency || "USD",
+    regularMarketPrice,
+    previousClose,
+    dayChangePercent,
     oneMonthChangePercent,
-    marketState: quote.marketState || "UNKNOWN",
+    marketState: meta.marketState || "UNKNOWN",
     dailyPrices,
   };
 }
